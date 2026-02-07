@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+data:
+  AWS_REGION: "us-west-2"
+  DYNAMO_TABLE_NAME: "hack-users-auth"
+  PORT: "8080"
+  GIN_MODE: "release"

@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  auth-api:
+    container_name: hack-auth-api
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/tmp
+    restart: always

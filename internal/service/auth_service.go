@@ -89,3 +89,6 @@ func (s *AuthService) generateJWT(user *domain.User) (string, error) {
 	// Assina com a chave secreta
 	return token.SignedString(s.jwtSecret)
 }
+
+// Garante que AuthService implementa domain.AuthUseCase
+var _ domain.AuthUseCase = (*AuthService)(nil)

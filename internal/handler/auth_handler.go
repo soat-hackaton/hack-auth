@@ -2,17 +2,17 @@ package handler
 
 import (
 	"fmt"
-	"hack-auth/internal/service"
+	"hack-auth/internal/domain"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type AuthHandler struct {
-	authService *service.AuthService
+	authService domain.AuthUseCase
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+func NewAuthHandler(authService domain.AuthUseCase) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 	}

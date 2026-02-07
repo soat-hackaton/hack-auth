@@ -1,5 +1,5 @@
 # --- Estágio 1: Builder (Compilação) ---
-FROM golang:1.21-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Instala certificados CA (necessário para o binário chamar HTTPS da AWS)
 RUN apk add --no-cache ca-certificates git

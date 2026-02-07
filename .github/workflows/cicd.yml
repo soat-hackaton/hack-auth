@@ -9,47 +9,39 @@ on:
 
 env:
   AWS_REGION: us-west-2
-  ECR_REPOSITORY: hack-auth
+  ECR_REPOSITORY: hack-auth-api
   EKS_CLUSTER_NAME: hack-infra-eks
-  IMAGE_NAME_IN_DEPLOYMENT: hack-auth
+  IMAGE_NAME_IN_DEPLOYMENT: hack-auth-api
 
 jobs:
   # ------------------------------------------------------------------
-  # JOB 1: TEST
+  # JOB 1: TEST & COVERAGE
   # ------------------------------------------------------------------
   test:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Atualizado v4
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5 # Atualizado v5 (corrige o erro do tar)
         with:
-          go-version: '1.24'
+          go-version: '1.25' # Usando a versão que definimos no go.mod
           cache: true
 
       - name: Run Tests with Coverage
         id: test-coverage
         run: |
-          echo "Running Tests..."
-          
-          # 1. Rodamos testes APENAS nos pacotes de lógica (Service e Handler)
-          # Ignoramos: cmd, config, domain, mocks, repository, api
+          echo "🧪 Running Tests..."
           go test -v -coverprofile=coverage.out ./internal/service/... ./internal/handler/...
-          
-          # 2. Extrai a porcentagem total do arquivo de cobertura
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
-          
-          echo "Current Coverage: $COVERAGE%"
-          
-          # 3. Verifica se é menor que 80.0 usando awk (bc nem sempre tem no runner)
+          echo "📊 Current Coverage: $COVERAGE%"
           if awk "BEGIN {exit !($COVERAGE < 80.0)}"; then
-            echo "FAILED: Code coverage is below 80% ($COVERAGE%)"
+            echo "❌ FAILED: Code coverage is below 80% ($COVERAGE%)"
             exit 1
           else
-            echo "PASSED: Code coverage is above 80%"
+            echo "✅ PASSED: Code coverage is above 80%"
           fi
 
   # ------------------------------------------------------------------
@@ -61,16 +53,16 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     
-    # Exporta a URL da imagem para o próximo job usar
+    # MUDANÇA: Passamos apenas a TAG, não a URL inteira (evita bloqueio de secret)
     outputs:
-      docker_image: ${{ steps.build-image.outputs.image }}
+      image_tag: ${{ steps.build-image.outputs.tag }}
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4 # Atualizado v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -79,7 +71,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2 # Atualizado v2 (corrige warnings)
 
       - name: Build, Tag, and Push Image
         id: build-image
@@ -87,15 +79,14 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Cria a URL completa da imagem
           FULL_IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           
-          # Build e Push
+          echo "🔨 Building: $FULL_IMAGE_URL"
           docker build -t $FULL_IMAGE_URL .
           docker push $FULL_IMAGE_URL
           
-          # Salva no output do GitHub Actions para o job de Deploy ler
-          echo "image=$FULL_IMAGE_URL" >> $GITHUB_OUTPUT
+          # Passamos apenas a TAG para o próximo job
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   # ------------------------------------------------------------------
   # JOB 3: DEPLOY
@@ -108,26 +99,40 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Precisamos logar de novo só para pegar a URL do Registry (variável segura)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Setup Kustomize
         uses: imranismail/setup-kustomize@v2
 
       - name: Update Kubernetes Manifests
         env:
-          NEW_IMAGE: ${{ needs.build.outputs.docker_image }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          # Recupera a tag do job anterior
+          NEW_TAG: ${{ needs.build.outputs.image_tag }}
         run: |
+          # Reconstrói a URL completa aqui dentro
+          FULL_IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$NEW_TAG"
+          
+          echo "🚀 Deploying image: $FULL_IMAGE_URL"
+          
           cd k8s/overlays/dev
-          kustomize edit set image ${{ env.IMAGE_NAME_IN_DEPLOYMENT }}=$NEW_IMAGE
-          cat kustomization.yml # Debug para ver se trocou certo
+          kustomize edit set image ${{ env.IMAGE_NAME_IN_DEPLOYMENT }}=$FULL_IMAGE_URL
+          
+          # Debug para garantir que trocou
+          cat kustomization.yaml
 
       - name: Update Kube Config
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}

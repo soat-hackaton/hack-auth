@@ -127,7 +127,7 @@ jobs:
         run: |
           cd k8s/overlays/dev
           kustomize edit set image ${{ env.IMAGE_NAME_IN_DEPLOYMENT }}=$NEW_IMAGE
-          cat kustomization.yaml # Debug para ver se trocou certo
+          cat kustomization.yml # Debug para ver se trocou certo
 
       - name: Update Kube Config
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}

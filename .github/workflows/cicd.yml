@@ -109,7 +109,6 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Precisamos logar de novo só para pegar a URL do Registry (variável segura)
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -120,7 +119,6 @@ jobs:
       - name: Update Kubernetes Manifests
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          # Recupera a tag do job anterior
           NEW_TAG: ${{ needs.build.outputs.image_tag }}
         run: |
           # Reconstrói a URL completa aqui dentro
@@ -136,6 +134,24 @@ jobs:
 
       - name: Update Kube Config
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Inject Secrets into Cluster
+        env:
+          AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: |
+          echo "Updating Kubernetes Secrets..."
+          
+          # Remove a secret antiga para evitar conflito
+          kubectl delete secret aws-credentials -n hack-auth --ignore-not-found
+          
+          # Cria a nova com os valores que vieram do GitHub Secrets
+          kubectl create secret generic aws-credentials \
+            --namespace hack-auth \
+            --from-literal=AWS_ACCESS_KEY_ID=$AWS_KEY \
+            --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET \
+            --from-literal=AWS_SESSION_TOKEN=$AWS_TOKEN
 
       - name: Deploy to Cluster
         run: |

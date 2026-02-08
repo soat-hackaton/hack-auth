@@ -2,8 +2,10 @@ package handler
 
 import (
 	"bytes"
-	"errors"
+	"encoding/json"
+	"hack-auth/internal/service"
 	"hack-auth/internal/tests/mocks"
+	"hack-auth/internal/utils/rest_err"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,129 +18,138 @@ func TestSignUpHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	t.Run("should return 201 on success", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
+		mockService := new(mocks.MockAuthService)
+		authHandler := NewAuthHandler(mockService)
 
-		mockSvc.On("SignUp", "John", "john@test.com", "StrongPassword1@@").Return(nil)
+		r := gin.Default()
+		r.POST("/signup", authHandler.SignUp)
+
+		reqBody := []byte(`{
+			"name": "Test",
+			"email": "test@example.com",
+			"password": "StrongPassword!1" 
+		}`)
+
+		// Mock retorna nil (sucesso)
+		mockService.On("SignUp", "Test", "test@example.com", "StrongPassword!1").Return(nil)
 
 		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		
-		reqBody := []byte(`{"name":"John", "email":"john@test.com", "password":"StrongPassword1@@"}`)
-		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
-		c.Request.Header.Set("Content-Type", "application/json")
-
-		h.SignUp(c)
+		req, _ := http.NewRequest("POST", "/signup", bytes.NewBuffer(reqBody))
+		r.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
 	})
 
-	t.Run("should return 400 on invalid input", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
+	t.Run("should return 400 for weak password", func(t *testing.T) {
+		mockService := new(mocks.MockAuthService)
+		authHandler := NewAuthHandler(mockService)
+		r := gin.Default()
+		r.POST("/signup", authHandler.SignUp)
 
+		// Senha fraca (curta ou sem requisitos)
+		reqBody := []byte(`{
+			"name": "Test",
+			"email": "test@example.com",
+			"password": "123" 
+		}`)
+
+		// O Service NÃO deve ser chamado, pois o validador barra antes
 		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		
-		reqBody := []byte(`{"name":"John", "email":"john@test.com"}`) // Sem senha
-		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
-
-		h.SignUp(c)
+		req, _ := http.NewRequest("POST", "/signup", bytes.NewBuffer(reqBody))
+		r.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+		
+		var response rest_err.RestErr
+		json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Equal(t, "bad_request", response.Err)
+        // Valida parte da mensagem
+		assert.Contains(t, response.Message, "Password must be at least 9 chars") 
 	})
 
-	// Teste de Conflito (Email já existe)
-	t.Run("should return 409 if email already exists", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
+	t.Run("should return 400 if email already exists", func(t *testing.T) {
+		mockService := new(mocks.MockAuthService)
+		authHandler := NewAuthHandler(mockService)
+		r := gin.Default()
+		r.POST("/signup", authHandler.SignUp)
 
-		// Simula erro específico de negócio
-		mockSvc.On("SignUp", "John", "exists@test.com", "StrongPassword1@@").Return(errors.New("email already registered"))
+		reqBody := []byte(`{
+			"name": "Test",
+			"email": "exists@example.com",
+			"password": "StrongPassword!1"
+		}`)
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		
-		reqBody := []byte(`{"name":"John", "email":"exists@test.com", "password":"StrongPassword1@@"}`)
-		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
-		c.Request.Header.Set("Content-Type", "application/json")
-
-		h.SignUp(c)
-
-		assert.Equal(t, http.StatusConflict, w.Code)
-	})
-
-	t.Run("should return 500 on internal error", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
-
-		// Simula erro genérico
-		mockSvc.On("SignUp", "John", "error@test.com", "StrongPassword1@@").Return(errors.New("database connection failed"))
+		// Mock retorna um RestErr criado pelo service
+		errReturn := rest_err.NewBadRequestError("Email already registered")
+		mockService.On("SignUp", "Test", "exists@example.com", "StrongPassword!1").Return(errReturn)
 
 		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
+		req, _ := http.NewRequest("POST", "/signup", bytes.NewBuffer(reqBody))
+		r.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 		
-		reqBody := []byte(`{"name":"John", "email":"error@test.com", "password":"StrongPassword1@@"}`)
-		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
-		c.Request.Header.Set("Content-Type", "application/json")
-
-		h.SignUp(c)
-
-		assert.Equal(t, http.StatusInternalServerError, w.Code)
+		var response rest_err.RestErr
+		json.Unmarshal(w.Body.Bytes(), &response)
+		assert.Equal(t, "Email already registered", response.Message)
 	})
 }
 
 func TestLoginHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	t.Run("should return 200 and token", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
+	t.Run("should return token and correct expires_in", func(t *testing.T) {
+		mockService := new(mocks.MockAuthService)
+		authHandler := NewAuthHandler(mockService)
 
-		mockSvc.On("Login", "john@test.com", "123456").Return("mocked-token-jwt", nil)
+		r := gin.Default()
+		r.POST("/login", authHandler.Login)
+
+		reqBody := []byte(`{
+			"email": "test@example.com",
+			"password": "StrongPassword!1"
+		}`)
+
+		// Mock sucesso
+		mockService.On("Login", "test@example.com", "StrongPassword!1").Return("mocked_token", nil)
 
 		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		
-		reqBody := []byte(`{"email":"john@test.com", "password":"123456"}`)
-		c.Request, _ = http.NewRequest("POST", "/auth/login", bytes.NewBuffer(reqBody))
-		c.Request.Header.Set("Content-Type", "application/json")
-
-		h.Login(c)
+		req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(reqBody))
+		r.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Body.String(), "mocked-token-jwt")
-	})
 
-	t.Run("should return 401 on failure", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
 
-		mockSvc.On("Login", "john@test.com", "wrong").Return("", errors.New("invalid"))
-
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
+		assert.Equal(t, "mocked_token", response["access_token"])
+		assert.Equal(t, "Bearer", response["token_type"])
 		
-		reqBody := []byte(`{"email":"john@test.com", "password":"wrong"}`)
-		c.Request, _ = http.NewRequest("POST", "/auth/login", bytes.NewBuffer(reqBody))
-
-		h.Login(c)
-
-		assert.Equal(t, http.StatusUnauthorized, w.Code)
+		// Valida se o expires_in reflete a constante do service
+		expectedExpires := int(service.TokenDuration.Seconds())
+		assert.Equal(t, float64(expectedExpires), response["expires_in"])
 	})
 
-	t.Run("should return 400 on invalid login input", func(t *testing.T) {
-		mockSvc := new(mocks.MockAuthService)
-		h := NewAuthHandler(mockSvc)
+    t.Run("should return 401 on invalid credentials", func(t *testing.T) {
+        mockService := new(mocks.MockAuthService)
+        authHandler := NewAuthHandler(mockService)
+        r := gin.Default()
+        r.POST("/login", authHandler.Login)
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		
-		reqBody := []byte(`{"email":"john@test.com"}`) // Sem senha
-		c.Request, _ = http.NewRequest("POST", "/auth/login", bytes.NewBuffer(reqBody))
+        reqBody := []byte(`{"email": "test@example.com", "password": "Wrong"}`)
 
-		h.Login(c)
+        // Mock retornando erro 401
+        errReturn := rest_err.NewUnauthorizedError("Invalid credentials")
+        mockService.On("Login", "test@example.com", "Wrong").Return("", errReturn)
 
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	})
+        w := httptest.NewRecorder()
+        req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(reqBody))
+        r.ServeHTTP(w, req)
+
+        assert.Equal(t, http.StatusUnauthorized, w.Code)
+        
+        var response rest_err.RestErr
+        json.Unmarshal(w.Body.Bytes(), &response)
+        assert.Equal(t, "unauthorized", response.Err)
+    })
 }

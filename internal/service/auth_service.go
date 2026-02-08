@@ -1,94 +1,80 @@
 package service
 
 import (
-	"errors"
+	"hack-auth/internal/config"
 	"hack-auth/internal/domain"
+	"hack-auth/internal/repository/dynamo"
+	"hack-auth/internal/utils/rest_err" // Import novo
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type AuthService struct {
-	repo      domain.UserRepository
-	jwtSecret []byte // Segredo para assinar o token
+const TokenDuration = time.Hour * 24
+
+type authService struct {
+	repo dynamo.AuthRepository
 }
 
-// NewAuthService recebe a interface do repositório e a chave secreta (que virá de env var)
-func NewAuthService(repo domain.UserRepository, secret string) *AuthService {
-	return &AuthService{
-		repo:      repo,
-		jwtSecret: []byte(secret),
-	}
+func NewAuthService(repo dynamo.AuthRepository) domain.AuthUseCase {
+	return &authService{repo: repo}
 }
 
-// SignUp: Regra de cadastro
-func (s *AuthService) SignUp(name, email, password string) error {
-	// 1. Verifica se já existe (opcional, pois o repo já trata erro de duplicidade,
-	// mas aqui podemos ser mais explícitos se quisermos)
-	_, err := s.repo.FindByEmail(email)
-	if err == nil {
-		return errors.New("email already registered")
-	}
+func (s *authService) SignUp(name, email, password string) error {
+    // 1. Validação da complexidade da senha
+    if !validator.IsPasswordStrong(password) {
+        return domain.ErrPasswordTooWeak 
+    }
 
-	// 2. Hash da Senha (Segurança: Nunca salvar texto plano)
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return errors.New("failed to hash password")
-	}
+    // 2. Verifica existência
+    existingUser, err := s.repo.FindByEmail(email)
+    if err != nil {
+        return err
+    }
+    if existingUser != nil {
+        return domain.ErrUserAlreadyExists
+    }
 
-	// 3. Cria a entidade de Domínio
-	user := &domain.User{
-		Name:      name,
-		Email:     email,
-		Password:  string(hashedPassword),
-		CreatedAt: time.Now(),
-	}
+    // 3. Hash e Persistência
+    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+    if err != nil {
+        return err
+    }
 
-	// 4. Salva usando o repositório
-	return s.repo.Create(user)
+    user := &domain.User{
+        Name:     name,
+        Email:    email,
+        Password: string(hashedPassword),
+    }
+
+	// 4. Cria usuário
+    return s.repo.CreateUser(user)
 }
 
-// Login: Regra de autenticação
-func (s *AuthService) Login(email, password string) (string, error) {
-	// 1. Busca o usuário
+func (s *authService) Login(email, password string) (string, *rest_err.RestErr) {
 	user, err := s.repo.FindByEmail(email)
 	if err != nil {
-		// Por segurança, mensagem genérica para não revelar se o email existe ou não
-		return "", errors.New("invalid credentials")
+		return "", err
+	}
+	if user == nil {
+		return "", domain.ErrInvalidCredentials
 	}
 
-	// 2. Compara a senha fornecida com o Hash do banco
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return "", domain.ErrInvalidCredentials
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":   user.ID,
+		"email": user.Email,
+		"exp":   time.Now().Add(TokenDuration).Unix(),
+	})
+
+	tokenString, err := token.SignedString([]byte(config.Envs.JWTSecret))
 	if err != nil {
-		return "", errors.New("invalid credentials")
+		return "", err
 	}
 
-	// 3. Gera o Token JWT
-	token, err := s.generateJWT(user)
-	if err != nil {
-		return "", errors.New("failed to generate token")
-	}
-
-	return token, nil
+	return tokenString, nil
 }
-
-// generateJWT: Cria o token assinado (Método privado auxiliar)
-func (s *AuthService) generateJWT(user *domain.User) (string, error) {
-	// Define as Claims (o conteúdo do token)
-	claims := jwt.MapClaims{
-		"sub":   user.Email, // Subject (quem é o dono do token)
-		"name":  user.Name,  // Opcional: Nome para o front exibir
-		"iss":   "fiap-x",   // Issuer (quem emitiu)
-		"exp":   time.Now().Add(time.Hour * 24).Unix(), // Expira em 24h
-	}
-
-	// Cria o token
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	// Assina com a chave secreta
-	return token.SignedString(s.jwtSecret)
-}
-
-// Garante que AuthService implementa domain.AuthUseCase
-var _ domain.AuthUseCase = (*AuthService)(nil)

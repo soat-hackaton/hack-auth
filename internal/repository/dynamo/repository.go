@@ -26,20 +26,17 @@ func NewUserRepository(client *dynamodb.Client, tableName string) *UserRepositor
 }
 
 func (r *UserRepository) Create(user *domain.User) error {
-	// 1. Converte Domain -> Schema
 	schema := toSchema(user)
 
 	if schema.CreatedAt.IsZero() {
 		schema.CreatedAt = time.Now()
 	}
 
-	// 2. Marshal do Schema
 	av, err := attributevalue.MarshalMap(schema)
 	if err != nil {
 		return fmt.Errorf("failed to marshal schema: %w", err)
 	}
 
-	// 3. Persiste no DynamoDB
 	_, err = r.client.PutItem(context.TODO(), &dynamodb.PutItemInput{
 		TableName:           aws.String(r.tableName),
 		Item:                av,
@@ -74,16 +71,14 @@ func (r *UserRepository) FindByEmail(email string) (*domain.User, error) {
 	}
 
 	if out.Item == nil {
-		return nil, errors.New("user not found")
+		return nil, nil 
 	}
 
-	// 1. Unmarshal no Schema
 	var schema UserSchema
 	err = attributevalue.UnmarshalMap(out.Item, &schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal schema: %w", err)
 	}
 
-	// 2. Converte Schema -> Domain e retorna
 	return toDomain(schema), nil
 }

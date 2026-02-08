@@ -4,6 +4,6 @@ metadata:
   name: auth-config
 data:
   AWS_REGION: "us-west-2"
-  DYNAMO_TABLE_NAME: "hack-users-auth"
+  DYNAMO_TABLE_NAME: "hack-users-db"
   PORT: "8080"
   GIN_MODE: "release"

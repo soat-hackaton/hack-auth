@@ -21,7 +21,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:            getEnv("PORT", "8080"), // Valor default
+		Port:            getEnv("PORT", "8080"),
 		JWTSecret:       os.Getenv("JWT_SECRET"),
 		AWSRegion:       getEnv("AWS_REGION", "us-west-2"),
 		DynamoTableName: os.Getenv("DYNAMO_TABLE_NAME"),

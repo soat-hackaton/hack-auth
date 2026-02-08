@@ -2,44 +2,50 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
-	"hack-auth/internal/api"    // <--- Importe o novo pacote api
+	"hack-auth/internal/api"
 	"hack-auth/internal/config"
 	"hack-auth/internal/handler"
 	"hack-auth/internal/repository/dynamo"
 	"hack-auth/internal/service"
+	"hack-auth/internal/utils/logger"
 
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 func main() {
-	// 1. Configuração
+	// Setup do Logger
+	logger.Init()
+	slog.Info("Initializing Hack Auth Service...")
+
+	// Configuração e Setup seguindo a ordem de dependências:
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("❌ Failed to load config: %v", err)
+		slog.Error("Failed to load config", "error", err)
+		panic(err)
 	}
 
-	// 2. Infraestrutura (AWS)
+	// Infraestrutura (AWS)
 	awsCfg, err := awsConfig.LoadDefaultConfig(context.TODO(), awsConfig.WithRegion(cfg.AWSRegion))
 	if err != nil {
-		log.Fatalf("❌ Unable to load SDK config: %v", err)
+		slog.Error("Unable to load SDK config", "error", err)
+		panic(err)
 	}
 	dynamoClient := dynamodb.NewFromConfig(awsCfg)
 
-	// 3. Injeção de Dependências (Wiring)
+	// Injeção de Dependências (Wiring)
 	userRepo := dynamo.NewUserRepository(dynamoClient, cfg.DynamoTableName)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
 	authHandler := handler.NewAuthHandler(authService)
 
-	// 4. Setup do Servidor (Abstraído)
-	// A main não sabe quais rotas existem, ela só pede um servidor pronto
+	// Setupo do Router e Handlers
 	r := api.SetupRouter(authHandler)
 
-	// 5. Start
-	log.Printf("🚀 Auth Service running on port %s", cfg.Port)
+	// Start
+	slog.Info("Server starting", "port", cfg.Port, "env", cfg.DynamoTableName)
 	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("❌ Server failed to start: %v", err)
+		slog.Error("Server failed to start", "error", err)
 	}
 }

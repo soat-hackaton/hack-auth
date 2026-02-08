@@ -1,6 +1,7 @@
 package api
 
 import (
+	"hack-auth/internal/api/middleware"
 	"hack-auth/internal/handler"
 
 	"github.com/gin-gonic/gin"
@@ -8,10 +9,10 @@ import (
 
 // SetupRouter configura todas as rotas da aplicação
 func SetupRouter(authHandler *handler.AuthHandler) *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
 
-	// Middlewares globais (CORS, Logger, etc) podem vir aqui
-	// r.Use(middleware.Cors())
+	r.Use(gin.Recovery())
+	r.Use(middleware.StructuredLogger())
 
 	// Health Check
 	r.GET("/health", func(c *gin.Context) {

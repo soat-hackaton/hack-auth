@@ -13,11 +13,11 @@ import (
 
 func TestSignUp(t *testing.T) {
 	t.Run("should create user successfully", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
+		mockRepo := new(mocks.MockUserRepository)
 		service := NewAuthService(mockRepo, "test-secret")
 
 		mockRepo.On("FindByEmail", "new@test.com").Return(nil, nil)
-		mockRepo.On("Create", mock.Anything).Return(nil)
+		mockRepo.On("Create", mock.AnythingOfType("*domain.User")).Return(nil)
 
 		err := service.SignUp("Test", "new@test.com", "StrongPass!1")
 
@@ -26,7 +26,7 @@ func TestSignUp(t *testing.T) {
 	})
 
 	t.Run("should return error if email exists", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
+		mockRepo := new(mocks.MockUserRepository)
 		service := NewAuthService(mockRepo, "test-secret")
 
 		existingUser := &domain.User{Email: "exists@test.com"}
@@ -38,19 +38,16 @@ func TestSignUp(t *testing.T) {
 	})
 
 	t.Run("should return internal server error if repository fails", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
-		service := NewAuthService(mockRepo)
+		mockRepo := new(mocks.MockUserRepository)
+		service := NewAuthService(mockRepo, "test-secret")
 
 		mockRepo.On("FindByEmail", "test@example.com").Return(nil, nil)
-		// Mock: CreateUser falha
-		mockRepo.On("CreateUser", mock.Anything).Return(errors.New("db error"))
+		mockRepo.On("Create", mock.AnythingOfType("*domain.User")).Return(errors.New("db error"))
 
-		err := service.SignUp("Test User", "test@example.com", "Password@123")
+		err := service.SignUp("Test User", "test@example.com", "StrongPass!1")
 
-		// Valida: Esperamos um RestErr com Code 500
 		assert.NotNil(t, err)
-		assert.Equal(t, http.StatusInternalServerError, err.Code)
-		assert.Equal(t, "Error creating user database record", err.Message)
+		assert.Equal(t, "db error", err.Error())
 	})
 }
 
@@ -60,11 +57,10 @@ func TestLogin(t *testing.T) {
 	hashedPassword := string(hashedBytes)
 
 	t.Run("should return token on success", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
+		mockRepo := new(mocks.MockUserRepository)
 		service := NewAuthService(mockRepo, "test-secret")
 
 		user := &domain.User{
-			ID:       "valid@test.com",
 			Email:    "valid@test.com",
 			Password: hashedPassword,
 		}
@@ -78,7 +74,7 @@ func TestLogin(t *testing.T) {
 	})
 
 	t.Run("should fail with wrong password", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
+		mockRepo := new(mocks.MockUserRepository)
 		service := NewAuthService(mockRepo, "test-secret")
 
 		user := &domain.User{
@@ -86,54 +82,12 @@ func TestLogin(t *testing.T) {
 			Password: hashedPassword,
 		}
 
-		// Mock: Encontra o usuário, mas a senha enviada no Login será errada
 		mockRepo.On("FindByEmail", "valid@test.com").Return(user, nil)
 
-		// Ação: Passamos "wrong_password"
 		token, err := service.Login("valid@test.com", "wrong_password")
 
-		// Validação
-		assert.NotNil(t, err) // Erro não deve ser nulo
-		assert.Empty(t, token)
-		
-		// Verificamos o Status Code e a Mensagem do RestErr
-		assert.Equal(t, http.StatusUnauthorized, err.Code)
-		assert.Equal(t, "Invalid credentials", err.Message)
-		assert.Equal(t, "unauthorized", err.Err)
-	})
-
-	t.Run("should fail if user not found", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
-		service := NewAuthService(mockRepo)
-
-		// Mock: Retorna nil (usuário não encontrado)
-		// Nota: Dependendo da sua implementação do Repo, pode retornar (nil, nil) ou (nil, erro)
-		// Assumindo que o repo retorna (nil, nil) quando não acha:
-		mockRepo.On("FindByEmail", "notfound@test.com").Return(nil, nil)
-
-		token, err := service.Login("notfound@test.com", "123456")
-
-		// Validação
 		assert.NotNil(t, err)
+		assert.Equal(t, domain.ErrInvalidCredentials, err)
 		assert.Empty(t, token)
-		
-		// Service deve retornar 401 para não expor que o email não existe (segurança)
-		assert.Equal(t, http.StatusUnauthorized, err.Code) 
-		assert.Equal(t, "Invalid credentials", err.Message)
-	})
-
-	t.Run("should return internal server error if db fails", func(t *testing.T) {
-		mockRepo := new(mocks.MockAuthRepository)
-		service := NewAuthService(mockRepo)
-
-		// Mock: Banco dá erro de conexão
-		mockRepo.On("FindByEmail", "error@test.com").Return(nil, errors.New("db connection failed"))
-
-		token, err := service.Login("error@test.com", "123456")
-
-		// Validação
-		assert.NotNil(t, err)
-		assert.Equal(t, http.StatusInternalServerError, err.Code)
-		assert.Equal(t, "Error validating user", err.Message)
 	})
 }

@@ -9,7 +9,7 @@ type MockUserRepository struct {
 	mock.Mock
 }
 
-func (m *MockUserRepository) CreateUser(user *domain.User) error {
+func (m *MockUserRepository) Create(user *domain.User) error {
 	args := m.Called(user)
 	return args.Error(0)
 }

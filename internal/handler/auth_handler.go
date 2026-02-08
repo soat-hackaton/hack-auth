@@ -2,7 +2,8 @@ package handler
 
 import (
 	"hack-auth/internal/domain"
-	"hack-auth/internal/utils/validator"
+	"hack-auth/internal/service"
+	"hack-auth/internal/utils/rest_err"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -51,7 +52,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	token, err := h.authService.Login(req.Email, req.Password)
 	if err != nil {
-		c.JSON(err.Code, err)
+		errRest := mapDomainError(err)
+		c.JSON(errRest.Code, errRest)
 		return
 	}
 

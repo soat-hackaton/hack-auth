@@ -80,8 +80,7 @@ func TestSignUpHandler(t *testing.T) {
 		}`)
 
 		// Mock retorna um RestErr criado pelo service
-		errReturn := rest_err.NewBadRequestError("Email already registered")
-		mockService.On("SignUp", "Test", "exists@example.com", "StrongPassword!1").Return(errReturn)
+		mockService.On("SignUp", "Test", "exists@example.com", "StrongPassword!1").Return(domain.ErrUserAlreadyExists)
 
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/signup", bytes.NewBuffer(reqBody))

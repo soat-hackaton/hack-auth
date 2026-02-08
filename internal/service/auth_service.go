@@ -1,10 +1,8 @@
 package service
 
 import (
-	"hack-auth/internal/config"
 	"hack-auth/internal/domain"
-	"hack-auth/internal/repository/dynamo"
-	"hack-auth/internal/utils/rest_err" // Import novo
+	"hack-auth/internal/utils/validator"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -14,49 +12,53 @@ import (
 const TokenDuration = time.Hour * 24
 
 type authService struct {
-	repo dynamo.AuthRepository
+	repo      domain.UserRepository
+	jwtSecret string
 }
 
-func NewAuthService(repo dynamo.AuthRepository) domain.AuthUseCase {
-	return &authService{repo: repo}
+func NewAuthService(repo domain.UserRepository, secret string) domain.AuthUseCase {
+	return &authService{
+		repo:      repo,
+		jwtSecret: secret,
+	}
 }
 
 func (s *authService) SignUp(name, email, password string) error {
-    // 1. Validação da complexidade da senha
-    if !validator.IsPasswordStrong(password) {
-        return domain.ErrPasswordTooWeak 
-    }
+	// 1. Validação de Regra de Negócio
+	if !validator.IsPasswordStrong(password) {
+		return domain.ErrPasswordTooWeak
+	}
 
-    // 2. Verifica existência
-    existingUser, err := s.repo.FindByEmail(email)
-    if err != nil {
-        return err
-    }
-    if existingUser != nil {
-        return domain.ErrUserAlreadyExists
-    }
+	// 2. Verifica existência
+	existingUser, err := s.repo.FindByEmail(email)
+	if err != nil {
+		return err
+	}
+	if existingUser != nil {
+		return domain.ErrUserAlreadyExists
+	}
 
-    // 3. Hash e Persistência
-    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-    if err != nil {
-        return err
-    }
+	// 3. Hash e Persistência
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
 
-    user := &domain.User{
-        Name:     name,
-        Email:    email,
-        Password: string(hashedPassword),
-    }
+	user := &domain.User{
+		Name:     name,
+		Email:    email,
+		Password: string(hashedPassword),
+	}
 
-	// 4. Cria usuário
-    return s.repo.CreateUser(user)
+	return s.repo.Create(user)
 }
 
-func (s *authService) Login(email, password string) (string, *rest_err.RestErr) {
+func (s *authService) Login(email, password string) (string, error) {
 	user, err := s.repo.FindByEmail(email)
 	if err != nil {
 		return "", err
 	}
+
 	if user == nil {
 		return "", domain.ErrInvalidCredentials
 	}
@@ -66,12 +68,12 @@ func (s *authService) Login(email, password string) (string, *rest_err.RestErr) 
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":   user.ID,
+		"sub":   user.Email,
 		"email": user.Email,
 		"exp":   time.Now().Add(TokenDuration).Unix(),
 	})
 
-	tokenString, err := token.SignedString([]byte(config.Envs.JWTSecret))
+	tokenString, err := token.SignedString([]byte(s.jwtSecret))
 	if err != nil {
 		return "", err
 	}

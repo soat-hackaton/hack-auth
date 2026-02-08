@@ -140,18 +140,23 @@ jobs:
           AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
           echo "Updating Kubernetes Secrets..."
           
-          # Remove a secret antiga para evitar conflito
-          kubectl delete secret aws-credentials -n hack-auth --ignore-not-found
+          # Remove a secret antiga
+          kubectl delete secret auth-secrets -n hack-auth --ignore-not-found
           
-          # Cria a nova com os valores que vieram do GitHub Secrets
-          kubectl create secret generic aws-credentials \
+          # Cria a nova secret com:
+          # 1. Nome correto (auth-secrets)
+          # 2. Chaves em minúsculo (para bater com o deployment)
+          # 3. Adição do JWT
+          kubectl create secret generic auth-secrets \
             --namespace hack-auth \
-            --from-literal=AWS_ACCESS_KEY_ID=$AWS_KEY \
-            --from-literal=AWS_SECRET_ACCESS_KEY=$AWS_SECRET \
-            --from-literal=AWS_SESSION_TOKEN=$AWS_TOKEN
+            --from-literal=aws_access_key_id=$AWS_KEY \
+            --from-literal=aws_secret_access_key=$AWS_SECRET \
+            --from-literal=aws_session_token=$AWS_TOKEN \
+            --from-literal=jwt_secret=$JWT_SECRET
 
       - name: Deploy to Cluster
         run: |

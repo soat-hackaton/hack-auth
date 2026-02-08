@@ -18,13 +18,9 @@ func SetupRouter(authHandler *handler.AuthHandler) *gin.Engine {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// Grupo de Autenticação
-	auth := r.Group("/auth")
-	{
-		auth.POST("/signup", authHandler.SignUp)
-		auth.POST("/login", authHandler.Login)
-		// Se tiver outras rotas (ex: refresh token), adicione aqui
-	}
+	// Routes
+	r.POST("/signup", authHandler.SignUp)
+	r.POST("/login", authHandler.Login)
 
 	return r
 }

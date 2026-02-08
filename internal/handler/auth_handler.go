@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"hack-auth/internal/domain"
 	"hack-auth/internal/utils/validator"
 	"net/http"

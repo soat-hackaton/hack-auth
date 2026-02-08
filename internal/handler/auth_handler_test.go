@@ -19,12 +19,12 @@ func TestSignUpHandler(t *testing.T) {
 		mockSvc := new(mocks.MockAuthService)
 		h := NewAuthHandler(mockSvc)
 
-		mockSvc.On("SignUp", "John", "john@test.com", "123456").Return(nil)
+		mockSvc.On("SignUp", "John", "john@test.com", "StrongPassword1@@").Return(nil)
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		
-		reqBody := []byte(`{"name":"John", "email":"john@test.com", "password":"123456"}`)
+		reqBody := []byte(`{"name":"John", "email":"john@test.com", "password":"StrongPassword1@@"}`)
 		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
 		c.Request.Header.Set("Content-Type", "application/json")
 
@@ -54,12 +54,12 @@ func TestSignUpHandler(t *testing.T) {
 		h := NewAuthHandler(mockSvc)
 
 		// Simula erro específico de negócio
-		mockSvc.On("SignUp", "John", "exists@test.com", "123456").Return(errors.New("email already registered"))
+		mockSvc.On("SignUp", "John", "exists@test.com", "StrongPassword1@@").Return(errors.New("email already registered"))
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		
-		reqBody := []byte(`{"name":"John", "email":"exists@test.com", "password":"123456"}`)
+		reqBody := []byte(`{"name":"John", "email":"exists@test.com", "password":"StrongPassword1@@"}`)
 		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
 		c.Request.Header.Set("Content-Type", "application/json")
 
@@ -73,12 +73,12 @@ func TestSignUpHandler(t *testing.T) {
 		h := NewAuthHandler(mockSvc)
 
 		// Simula erro genérico
-		mockSvc.On("SignUp", "John", "error@test.com", "123456").Return(errors.New("database connection failed"))
+		mockSvc.On("SignUp", "John", "error@test.com", "StrongPassword1@@").Return(errors.New("database connection failed"))
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		
-		reqBody := []byte(`{"name":"John", "email":"error@test.com", "password":"123456"}`)
+		reqBody := []byte(`{"name":"John", "email":"error@test.com", "password":"StrongPassword1@@"}`)
 		c.Request, _ = http.NewRequest("POST", "/auth/signup", bytes.NewBuffer(reqBody))
 		c.Request.Header.Set("Content-Type", "application/json")
 

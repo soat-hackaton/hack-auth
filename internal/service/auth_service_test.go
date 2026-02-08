@@ -25,6 +25,16 @@ func TestSignUp(t *testing.T) {
 		mockRepo.AssertExpectations(t)
 	})
 
+	t.Run("should return error if password is weak", func(t *testing.T) {
+		mockRepo := new(mocks.MockUserRepository)
+		service := NewAuthService(mockRepo, "test-secret")
+
+		err := service.SignUp("Test", "weak@test.com", "123")
+
+		assert.Equal(t, domain.ErrPasswordTooWeak, err)
+		mockRepo.AssertNotCalled(t, "FindByEmail")
+	})
+
 	t.Run("should return error if email exists", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
 		service := NewAuthService(mockRepo, "test-secret")
@@ -35,6 +45,18 @@ func TestSignUp(t *testing.T) {
 		err := service.SignUp("Test", "exists@test.com", "StrongPass!1")
 
 		assert.Equal(t, domain.ErrUserAlreadyExists, err)
+	})
+
+	t.Run("should return error if find by email fails", func(t *testing.T) {
+		mockRepo := new(mocks.MockUserRepository)
+		service := NewAuthService(mockRepo, "test-secret")
+
+		mockRepo.On("FindByEmail", "error@test.com").Return(nil, errors.New("connection refused"))
+
+		err := service.SignUp("Test", "error@test.com", "StrongPass!1")
+
+		assert.Error(t, err)
+		assert.Equal(t, "connection refused", err.Error())
 	})
 
 	t.Run("should return internal server error if repository fails", func(t *testing.T) {
@@ -71,6 +93,30 @@ func TestLogin(t *testing.T) {
 
 		assert.Nil(t, err)
 		assert.NotEmpty(t, token)
+	})
+
+	t.Run("should return error if repository fails", func(t *testing.T) {
+		mockRepo := new(mocks.MockUserRepository)
+		service := NewAuthService(mockRepo, "test-secret")
+
+		mockRepo.On("FindByEmail", "error@test.com").Return(nil, errors.New("db error"))
+
+		token, err := service.Login("error@test.com", password)
+
+		assert.Error(t, err)
+		assert.Empty(t, token)
+	})
+
+	t.Run("should fail if user not found", func(t *testing.T) {
+		mockRepo := new(mocks.MockUserRepository)
+		service := NewAuthService(mockRepo, "test-secret")
+
+		mockRepo.On("FindByEmail", "notfound@test.com").Return(nil, nil)
+
+		token, err := service.Login("notfound@test.com", "anypass")
+
+		assert.Equal(t, domain.ErrInvalidCredentials, err)
+		assert.Empty(t, token)
 	})
 
 	t.Run("should fail with wrong password", func(t *testing.T) {

@@ -32,7 +32,6 @@ func (h *AuthHandler) SignUp(c *gin.Context) {
     // 2. Chama o Service (Passando DADOS, não contexto HTTP)
     err := h.authService.SignUp(req.Name, req.Email, req.Password)
     if err != nil {
-        // Usa nosso Mapper para traduzir o erro de domínio para HTTP
         errRest := mapDomainError(err)
         c.JSON(errRest.Code, errRest)
         return

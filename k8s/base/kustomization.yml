@@ -7,3 +7,4 @@ resources:
   - service.yml
   - deployment.yml
   - hpa.yml
+  - ingress.yml

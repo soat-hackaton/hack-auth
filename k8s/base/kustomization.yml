@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - namespace.yml
   - configmaps.yml
+  - secrets.yml
   - service.yml
   - deployment.yml
   - hpa.yml

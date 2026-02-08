@@ -4,6 +4,8 @@ import (
 	"errors"
 	"hack-auth/internal/domain"
 	"hack-auth/internal/utils/rest_err"
+
+	"log/slog"
 )
 
 func mapDomainError(err error) *rest_err.RestErr {
@@ -18,6 +20,8 @@ func mapDomainError(err error) *rest_err.RestErr {
 			return rest_err.NewUnauthorizedError("Invalid credentials")
 		
 		default:
+			slog.Error("Unhandled domain error", "error", err)
+
 			return rest_err.NewInternalServerError("Internal server error")
     }
 }

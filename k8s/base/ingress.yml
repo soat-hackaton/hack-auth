@@ -4,10 +4,10 @@ metadata:
   name: auth-ingress
   namespace: hack-auth
   annotations:
-    kubernetes.io/ingress.class: kong
     konghq.com/plugins: global-cors, global-rate-limit
     konghq.com/strip-path: "true"
 spec:
+  ingressClassName: kong
   rules:
     - http:
         paths:

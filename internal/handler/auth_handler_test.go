@@ -71,7 +71,7 @@ func TestSignUpHandler(t *testing.T) {
 		r.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
-		assert.Contains(t, w.Body.String(), "must be at least 8 chars")
+		assert.Contains(t, w.Body.String(), "Senha deve conter no mínimo 8 caracteres, uma maiúscula, uma minúscula, um número e um símbolo")
 	})
 
 	t.Run("should return 400 if email already exists", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestSignUpHandler(t *testing.T) {
 		
 		var response rest_err.RestErr
 		json.Unmarshal(w.Body.Bytes(), &response)
-		assert.Contains(t, response.Message, "Email already registered")
+		assert.Contains(t, response.Message, "Email já foi registrado")
 	})
 
 	t.Run("should return 500 on internal error", func(t *testing.T) {

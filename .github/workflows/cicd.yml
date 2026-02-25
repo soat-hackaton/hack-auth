@@ -1,11 +1,17 @@
-name: CI/CD Pipeline
+name: Esteira DevSecOps
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "dev", "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Bypass AWS Academy: Forçar deploy manual no EKS?'
+        type: boolean
+        required: true
+        default: true
 
 env:
   AWS_REGION: us-west-2
@@ -14,48 +20,71 @@ env:
   IMAGE_NAME_IN_DEPLOYMENT: hack-auth
 
 jobs:
-  # ------------------------------------------------------------------
-  # JOB 1: TEST & COVERAGE
-  # ------------------------------------------------------------------
-  test:
-    name: Unit Tests & Coverage
+  # ==========================================
+  # 1. CI: Testes, Cobertura (80%) e SonarQube
+  # ==========================================
+  ci_checks:
+    name: Code Quality & Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
-          cache: true
+          go-version: '1.22'
 
-      - name: Run Tests with Coverage
-        id: test-coverage
+      - name: Run Tests & Check Coverage
         run: |
-          echo "Running Tests..."
           go test -v -coverprofile=coverage.out ./internal/service/... ./internal/handler/...
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
-          echo "Current Coverage: $COVERAGE%"
+          
+          echo "Cobertura Atual: $COVERAGE%"
           if awk "BEGIN {exit !($COVERAGE < 80.0)}"; then
-            echo "FAILED: Code coverage is below 80% ($COVERAGE%)"
+            echo "FALHOU: A cobertura está abaixo dos 80% mínimos exigidos ($COVERAGE%)"
             exit 1
-          else
-            echo "PASSED: Code coverage is above 80%"
           fi
 
-  # ------------------------------------------------------------------
-  # JOB 2: BUILD & PUSH
-  # ------------------------------------------------------------------
-  build:
-    name: Build & Push to ECR
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    
-    outputs:
-      image_tag: ${{ steps.build-image.outputs.tag }}
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  # ==========================================
+  # 2. AUTO-PR: Cria PR de Dev para Main
+  # ==========================================
+  auto_pr:
+    name: Auto-PR (Dev -> Main)
+    runs-on: ubuntu-latest
+    needs: ci_checks
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_EXISTS=$(gh pr list --head dev --base main --json number --jq 'length')
+          if [ "$PR_EXISTS" -eq "0" ]; then
+            gh pr create --base main --head dev --title "Release Automática" --body "Aprovado: Cobertura >= 80% e Security Scan (Sonar)."
+          else
+            echo "PR já existe."
+          fi
+
+  # ==========================================
+  # 3. CD: Build, Push ECR e Deploy no EKS
+  # ==========================================
+  release_and_deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+    needs: ci_checks
+    if: github.ref == 'refs/heads/main' || github.event.inputs.force_deploy == 'true'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -68,88 +97,41 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
+      - name: ECR Login & Docker Push
+        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Tag, and Push Image
-        id: build-image
+      - name: Build & Push Docker Image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           FULL_IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          
-          echo "🔨 Building: $FULL_IMAGE_URL"
           docker build -t $FULL_IMAGE_URL .
           docker push $FULL_IMAGE_URL
-          
-          # Passamos apenas a TAG para o próximo job
-          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-  # ------------------------------------------------------------------
-  # JOB 3: DEPLOY
-  # ------------------------------------------------------------------
-  deploy:
-    name: Deploy to EKS
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+          echo "FULL_IMAGE_URL=$FULL_IMAGE_URL" >> $GITHUB_ENV
 
       - name: Setup Kustomize
         uses: imranismail/setup-kustomize@v2
 
-      - name: Update Kubernetes Manifests
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          NEW_TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          # Reconstrói a URL completa aqui dentro
-          FULL_IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$NEW_TAG"
-          
-          echo "🚀 Deploying image: $FULL_IMAGE_URL"
-          
-          cd k8s/overlays/dev
-          kustomize edit set image ${{ env.IMAGE_NAME_IN_DEPLOYMENT }}=$FULL_IMAGE_URL
-          
-          # Debug para garantir que trocou
-          cat kustomization.yml
-
-      - name: Update Kube Config
-        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
-
-      - name: Inject Secrets into Cluster
+      - name: Update Manifests, Inject Secrets & Deploy
         env:
           AWS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: |
-          echo "Updating Kubernetes Secrets..."
+          # 1. Atualiza a imagem no Kustomize
+          cd k8s/overlays/dev
+          kustomize edit set image ${{ env.IMAGE_NAME_IN_DEPLOYMENT }}=${{ env.FULL_IMAGE_URL }}
+          cd ../../..
 
-          # 1. Garante que o namespace existe
+          # 2. Atualiza o Kubeconfig
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+          # 3. Injecão de Secrets
           kubectl create namespace hack-auth --dry-run=client -o yaml | kubectl apply -f -
-          
-          # 2. Deleta a secret velha
           kubectl delete secret auth-secrets -n hack-auth --ignore-not-found
-          
-          # 3. Cria a nova secret limpa
           kubectl create secret generic auth-secrets \
             --namespace hack-auth \
             --from-literal=aws_access_key_id=$AWS_KEY \
@@ -157,7 +139,6 @@ jobs:
             --from-literal=aws_session_token=$AWS_TOKEN \
             --from-literal=jwt_secret=$JWT_SECRET
 
-      - name: Deploy to Cluster
-        run: |
+          # 4. Deploy no EKS e Restart
           kubectl apply -k k8s/overlays/dev
           kubectl rollout restart deployment/auth-service -n hack-auth

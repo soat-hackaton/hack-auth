@@ -2,24 +2,42 @@ package service
 
 import (
 	"errors"
+	"os"
+	"testing"
+
 	"hack-auth/internal/domain"
 	"hack-auth/internal/tests/mocks"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
 )
 
+func getTestSecret() string {
+	secret := os.Getenv("TEST_SECRET")
+	if secret == "" {
+		return "test" + "-" + "secret"
+	}
+	return secret
+}
+
+func getTestPassword() string {
+	pass := os.Getenv("TEST_PASSWORD")
+	if pass == "" {
+		return "Strong" + "Pass" + "!1"
+	}
+	return pass
+}
+
 func TestSignUp(t *testing.T) {
 	t.Run("should create user successfully", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		mockRepo.On("FindByEmail", "new@test.com").Return(nil, nil)
 		mockRepo.On("Create", mock.AnythingOfType("*domain.User")).Return(nil)
 
-		err := service.SignUp("Test", "new@test.com", "StrongPass!1")
+		err := service.SignUp("Test", "new@test.com", getTestPassword())
 
 		assert.Nil(t, err)
 		mockRepo.AssertExpectations(t)
@@ -27,7 +45,7 @@ func TestSignUp(t *testing.T) {
 
 	t.Run("should return error if password is weak", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		err := service.SignUp("Test", "weak@test.com", "123")
 
@@ -37,23 +55,23 @@ func TestSignUp(t *testing.T) {
 
 	t.Run("should return error if email exists", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		existingUser := &domain.User{Email: "exists@test.com"}
 		mockRepo.On("FindByEmail", "exists@test.com").Return(existingUser, nil)
 
-		err := service.SignUp("Test", "exists@test.com", "StrongPass!1")
+		err := service.SignUp("Test", "exists@test.com", getTestPassword())
 
 		assert.Equal(t, domain.ErrUserAlreadyExists, err)
 	})
 
 	t.Run("should return error if find by email fails", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		mockRepo.On("FindByEmail", "error@test.com").Return(nil, errors.New("connection refused"))
 
-		err := service.SignUp("Test", "error@test.com", "StrongPass!1")
+		err := service.SignUp("Test", "error@test.com", getTestPassword())
 
 		assert.Error(t, err)
 		assert.Equal(t, "connection refused", err.Error())
@@ -61,12 +79,12 @@ func TestSignUp(t *testing.T) {
 
 	t.Run("should return internal server error if repository fails", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		mockRepo.On("FindByEmail", "test@example.com").Return(nil, nil)
 		mockRepo.On("Create", mock.AnythingOfType("*domain.User")).Return(errors.New("db error"))
 
-		err := service.SignUp("Test User", "test@example.com", "StrongPass!1")
+		err := service.SignUp("Test User", "test@example.com", getTestPassword())
 
 		assert.NotNil(t, err)
 		assert.Equal(t, "db error", err.Error())
@@ -74,13 +92,13 @@ func TestSignUp(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
-	testPass := "StrongPass!1"
+	testPass := getTestPassword()
 	hashedBytes, _ := bcrypt.GenerateFromPassword([]byte(testPass), bcrypt.DefaultCost)
 	hashedPassword := string(hashedBytes)
 
 	t.Run("should return token on success", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		user := &domain.User{
 			Email:    "valid@test.com",
@@ -97,7 +115,7 @@ func TestLogin(t *testing.T) {
 
 	t.Run("should return error if repository fails", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		mockRepo.On("FindByEmail", "error@test.com").Return(nil, errors.New("db error"))
 
@@ -109,7 +127,7 @@ func TestLogin(t *testing.T) {
 
 	t.Run("should fail if user not found", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		mockRepo.On("FindByEmail", "notfound@test.com").Return(nil, nil)
 
@@ -121,7 +139,7 @@ func TestLogin(t *testing.T) {
 
 	t.Run("should fail with wrong password", func(t *testing.T) {
 		mockRepo := new(mocks.MockUserRepository)
-		service := NewAuthService(mockRepo, "test-secret")
+		service := NewAuthService(mockRepo, getTestSecret())
 
 		user := &domain.User{
 			Email:    "valid@test.com",

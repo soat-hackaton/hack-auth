@@ -49,7 +49,8 @@ jobs:
           fi
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        # O SHA abaixo refere-se à versão v4.2.1 (Estável)
+        uses: SonarSource/sonarqube-scan-action@53c3e3207fe4b8d52e29c8c6ba3081aa5dcbd7db
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -117,7 +118,8 @@ jobs:
           echo "FULL_IMAGE_URL=$FULL_IMAGE_URL" >> $GITHUB_ENV
 
       - name: Setup Kustomize
-        uses: imranismail/setup-kustomize@v2
+        # O SHA abaixo refere-se à versão v2.1.0 (Estável)
+        uses: imranismail/setup-kustomize@a76aa1c290cb4ee20547d4681333d06c5608d4e9
 
       - name: Update Manifests, Inject Secrets & Deploy
         env:

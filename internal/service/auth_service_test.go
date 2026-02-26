@@ -74,8 +74,8 @@ func TestSignUp(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
-	password := "StrongPass!1"
-	hashedBytes, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	testPass := "StrongPass!1"
+	hashedBytes, _ := bcrypt.GenerateFromPassword([]byte(testPass), bcrypt.DefaultCost)
 	hashedPassword := string(hashedBytes)
 
 	t.Run("should return token on success", func(t *testing.T) {
@@ -89,7 +89,7 @@ func TestLogin(t *testing.T) {
 
 		mockRepo.On("FindByEmail", "valid@test.com").Return(user, nil)
 
-		token, err := service.Login("valid@test.com", password)
+		token, err := service.Login("valid@test.com", testPass)
 
 		assert.Nil(t, err)
 		assert.NotEmpty(t, token)
@@ -101,7 +101,7 @@ func TestLogin(t *testing.T) {
 
 		mockRepo.On("FindByEmail", "error@test.com").Return(nil, errors.New("db error"))
 
-		token, err := service.Login("error@test.com", password)
+		token, err := service.Login("error@test.com", testPass)
 
 		assert.Error(t, err)
 		assert.Empty(t, token)

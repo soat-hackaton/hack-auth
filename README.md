@@ -87,10 +87,25 @@ go tool cover -html=coverage.out
 
 O deploy é automatizado via **GitHub Actions** para o cluster EKS na AWS.
 
-### Pipeline de CI/CD
-1.  **Test**: Roda testes unitários e verifica cobertura (>80%).
-2.  **Build**: Cria imagem Docker e envia para o Amazon ECR.
-3.  **Deploy**: Atualiza os manifestos Kubernetes (Kustomize) e aplica no EKS.
+### 🔄 Pipeline de CI/CD (DevSecOps)
+
+A nossa pipeline reflete as melhores práticas, com validações rigorosas e deploy automatizado:
+
+1. **Testes e Qualidade (CI)**
+   - Execução dos testes unitários com barreira obrigatória (mínimo de **80% de cobertura**).
+   - Validação de segurança e qualidade do código fonte de forma automatizada através do **SonarQube/SonarCloud**.
+2. **Automação de Pull Request**
+   - Após rodar os testes com sucesso na branch `dev`, um PR é aberto de forma automática para a branch `main`.
+3. **Build e Deploy (CD)**
+   - Executado **somente** na branch `main` (ou manualmente em casos de bypass).
+   - Criação automatizada da imagem Docker com envio para o **Amazon ECR**.
+   - Injeção segura de credenciais e atualização dos manifestos usando Kustomize.
+   - Deploy automático no cluster **AWS EKS**.
+
+### 🛡️ Boas Práticas Adotadas
+
+- **Proteção de Branch (`main`):** Commits diretos não são permitidos; todo fluxo exige pull requests que devem respeitar as regras do CI (cobertura + Sonar).
+- **Gestão de Secrets:** As credenciais sensíveis nunca são versionadas nem salvas no repo. Elas ficam no GitHub Secrets e são injetadas em tempo de runtime no Kubernetes via env vars/secrets.
 
 ### Estrutura K8s
 O projeto utiliza **Kustomize** para gestão de ambientes:

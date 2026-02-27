@@ -77,7 +77,7 @@ jobs:
         run: |
           PR_EXISTS=$(gh pr list --head dev --base main --json number --jq 'length')
           if [ "$PR_EXISTS" -eq "0" ]; then
-            gh pr create --base main --head dev --title "Release Automática" --body "Aprovado: Cobertura >= 80% e Security Scan (Sonar)."
+            gh pr create --base main --head dev --title "PR criado automaticamente. main <- dev" --body "Aprovado: Cobertura >= 80% e Security Scan (Sonar)."
           else
             echo "PR já existe."
           fi
